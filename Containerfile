@@ -1,99 +1,89 @@
 # =============================================================================
-# Multi-Stage Production Containerfile for CHANGE_ME
+# Multi-Stage Production Containerfile for Go Application
 # =============================================================================
 # Compatible with: Podman 4.0+, Docker 20.10+
-# Target image size: <500MB
-# Security: Non-root user execution (UID 1000)
+# Target image size: <50MB
+# Security: Non-root user execution (UID 1000), distroless base
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Stage 1: Builder - Install dependencies and build artifacts
+# Stage 1: Builder - Build Go binary
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS builder
+FROM golang:1.23-alpine AS builder
 
-# Install build dependencies for compiling Python packages
-# gcc: C compiler for building Python C extensions
-# build-essential: Essential build tools (make, etc.)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    gcc=4:12.2.0-3 \
-    build-essential=12.9 \
-    curl=7.88.1-10+deb12u8 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv - fast Python package installer
-# WHY UV: Significantly faster than pip for dependency resolution and installation
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:${PATH}"
+# Install build dependencies
+# git: Required for fetching Go modules from VCS
+# ca-certificates: SSL/TLS certificate validation for module downloads
+RUN apk add --no-cache \
+    git=2.45.2-r0 \
+    ca-certificates=20240705-r0
 
 # Set working directory for build
 WORKDIR /build
 
-# Copy dependency files and source code
-# Note: Source code needed for hatchling to build package during uv sync
-COPY pyproject.toml uv.lock README.md ./
-COPY src/ ./src/
+# Copy dependency files first for better layer caching
+# Go modules are cached unless go.mod/go.sum change
+COPY go.mod go.sum ./
 
-# Install Python dependencies using uv
-# --frozen: Use exact versions from uv.lock (deterministic builds)
-# --no-dev: Skip development dependencies (tests, linters)
-RUN uv sync --frozen --no-dev
+# Download dependencies
+# Separate layer for dependency caching - only re-runs if go.mod/go.sum change
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY pkg/ ./pkg/
+
+# Build binary with optimizations
+# CGO_ENABLED=0: Static binary, no C dependencies
+# -ldflags="-s -w": Strip debug info and symbol table (reduces size)
+# -trimpath: Remove file system paths from binary (security)
+# -tags=netgo: Use pure Go network stack
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build \
+    -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
+    -trimpath \
+    -tags=netgo \
+    -o /build/bin/api \
+    ./cmd/api
+
+# Verify binary is statically linked
+RUN ldd /build/bin/api 2>&1 | grep -q "not a dynamic executable"
 
 # -----------------------------------------------------------------------------
 # Stage 2: Production - Minimal runtime image
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS production
+FROM gcr.io/distroless/static-debian12:nonroot AS production
 
-# Install runtime dependencies only
-# libpq5: PostgreSQL client library (required by asyncpg)
-# ca-certificates: SSL/TLS certificate validation
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libpq5=15.10-0+deb12u1 \
-    ca-certificates=20230311 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user for security
-# appuser (UID 1000): Standard non-privileged user
-# WHY: Principle of least privilege - reduces attack surface if container compromised
-RUN groupadd -g 1000 appuser && \
-    useradd -u 1000 -g appuser -m -s /bin/bash appuser
+# Distroless image benefits:
+# - No shell, package manager, or unnecessary binaries (smaller attack surface)
+# - Minimal CVE exposure
+# - Already configured with non-root user (UID 65532)
+# - CA certificates included for HTTPS
 
 # Set working directory
 WORKDIR /app
 
-# Copy Python dependencies from builder stage
-# Only virtual environment, not build tools
-COPY --from=builder --chown=appuser:appuser /build/.venv /app/.venv
+# Copy binary from builder stage
+# Distroless uses UID 65532 (nonroot user) by default
+COPY --from=builder --chown=65532:65532 /build/bin/api /app/api
 
-# Copy application source code from builder stage
-COPY --from=builder --chown=appuser:appuser /build/src /app/src
-
-# Set Python path to use virtual environment
-ENV PATH="/app/.venv/bin:${PATH}" \
-    PYTHONPATH="/app/src" \
-    PYTHONUNBUFFERED=1
-
-# Switch to non-root user
-# All subsequent commands and container runtime execute as appuser
-USER appuser
+# Copy optional configuration files if needed
+# COPY --from=builder --chown=65532:65532 /build/configs /app/configs
 
 # Expose application port
-# Port 8000: FastAPI default port (Uvicorn)
-EXPOSE 8000
+# Port 8080: Standard HTTP port for containerized apps
+EXPOSE 8080
 
 # Health check configuration
 # Interval: Check every 30 seconds
 # Timeout: Fail if health check takes >10 seconds
 # Start period: Wait 40 seconds after container start before first check
 # Retries: Mark unhealthy after 3 consecutive failures
+# Note: Distroless has no shell, so use ENTRYPOINT for health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()" || exit 1
+    CMD ["/app/api", "-healthcheck"]
 
 # Application entry point
-# Uvicorn: ASGI server for FastAPI
-# --host 0.0.0.0: Listen on all interfaces (required for container networking)
-# --port 8000: Standard FastAPI port
-# Using python -m syntax for better compatibility
-CMD ["python", "-m", "uvicorn", "change_me.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Binary runs as non-root user (UID 65532) automatically
+ENTRYPOINT ["/app/api"]
