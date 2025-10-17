@@ -19,9 +19,10 @@ repos:
         name: Fix Go imports (goimports)
         description: Run goimports to organize imports
 
-      - id: go-vet
-        name: Go vet (type check)
-        description: Run go vet for static analysis
+      # Note: go-vet hook disabled - golangci-lint includes vet checks
+      # - id: go-vet
+      #   name: Go vet (type check)
+      #   description: Run go vet for static analysis
 
       - id: go-mod-tidy
         name: Tidy go.mod and go.sum
@@ -32,27 +33,34 @@ repos:
         description: Run go test for unit tests
         args: ['-short', '-race']
 
-  # golangci-lint (comprehensive linting)
-  - repo: https://github.com/golangci/golangci-lint
-    rev: v1.55.2
+  # golangci-lint (comprehensive linting) - using local installation
+  # Note: Using local repo to avoid ARM64 compatibility issues
+  # Install with: task setup
+  - repo: local
     hooks:
       - id: golangci-lint
         name: golangci-lint (comprehensive linting)
         description: Run golangci-lint with fast mode for pre-commit
-        args: ['--fast']
+        entry: golangci-lint
+        args: ['run']
+        language: system
+        types: [go]
+        pass_filenames: false
 
   # Security scanning
-  - repo: https://github.com/securego/gosec
-    rev: v2.18.2
-    hooks:
-      - id: gosec
-        name: gosec (security scanner)
-        description: Security scanner for Go code
-        args: ['-fmt=text', '-exclude-dir=tests', './...']
+  # Note: gosec hook temporarily disabled due to pre-commit cache issue
+  # Run manually with: task security:gosec
+  # - repo: https://github.com/securego/gosec
+  #   rev: v2.18.2
+  #   hooks:
+  #     - id: gosec
+  #       name: gosec (security scanner)
+  #       description: Security scanner for Go code
+  #       args: ['-fmt=text', '-exclude-dir=tests', './...']
 
   # YAML validation
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
         name: Check YAML syntax
@@ -79,7 +87,7 @@ repos:
 
   # Containerfile linting
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
+    rev: v2.14.0
     hooks:
       - id: hadolint
         name: Lint Containerfile with hadolint

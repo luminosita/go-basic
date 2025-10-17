@@ -27,10 +27,14 @@
       "echo '  2. View tasks: task --list'",
       "echo '  3. Start dev server: task dev'",
       "echo ''",
-      "# Add ~/.local/bin to PATH for user-installed binaries",
-      "export PATH=\"$HOME/.local/bin:$PATH\"",
-      "# Create .local/bin if it doesn't exist",
-      "mkdir -p $HOME/.local/bin"
+      "# Add local .go/bin to PATH for Go tools",
+      "export PATH=\"$PWD/.go/bin:$PATH\"",
+      "# Create .go/bin if it doesn't exist",
+      "mkdir -p $PWD/.go/bin",
+      "echo 'Go environment:'",
+      "echo '  GOPATH: '$GOPATH",
+      "echo '  GOBIN: '$GOBIN",
+      "echo ''"
     ],
     "scripts": {
       "setup": "nu scripts/setup.nu",
@@ -40,6 +44,9 @@
   },
   "env": {
     "DEVBOX_ENV": "development",
-    "PYTHONUNBUFFERED": "1"
+    "GOPATH": "$PWD/.go",
+    "GOMODCACHE": "$PWD/.go/pkg/mod",
+    "GOBIN": "$PWD/.go/bin",
+    "PATH": "$PWD/.go/bin:$PATH"
   }
 }

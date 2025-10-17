@@ -115,14 +115,19 @@ tasks:
       - echo "✅ Coverage report generated at coverage.html"
 
   test:unit:
-    desc: Run unit tests only (exclude integration)
+    desc: Run unit tests only (exclude integration and mock)
     cmds:
-      - go test -v -short ./...
+      - go test -v -short ./internal/...
+
+  test:mock:
+    desc: Run mock tests only (tests with mocked dependencies)
+    cmds:
+      - go test -v -race ./tests/unit/...
 
   test:integration:
-    desc: Run integration tests only
+    desc: Run integration tests only (with build tag)
     cmds:
-      - go test -v -run Integration ./...
+      - go test -v -race -tags=integration ./tests/integration/...
 
   test:race:
     desc: Run tests with race detector
@@ -168,6 +173,13 @@ tasks:
     desc: Run end-to-end tests only
     cmds:
       - go test -v -tags=e2e ./tests/e2e/...
+
+  test:all:
+    desc: Run all tests (unit + mock + integration)
+    cmds:
+      - task: test:unit
+      - task: test:mock
+      - task: test:integration
 
   # ====================
   # Quality Check (All)
@@ -686,20 +698,7 @@ tasks:
   setup:
     desc: Initial project setup (install deps and tools)
     cmds:
-      - go mod download
-      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-      - go install github.com/securego/gosec/v2/cmd/gosec@latest
-      - go install golang.org/x/vuln/cmd/govulncheck@latest
-      - go install honnef.co/go/tools/cmd/staticcheck@latest
-      - go install github.com/google/wire/cmd/wire@latest
-      - go install github.com/swaggo/swag/cmd/swag@latest
-      - go install github.com/golang/mock/mockgen@latest
-      - go install github.com/cosmtrek/air@latest
-      - go install github.com/go-delve/delve/cmd/dlv@latest
-      - echo "✅ Go tools installed successfully"
-      - echo ""
-      - echo "Note: pre-commit is managed by devbox (devbox.json)"
-      - echo "If not using devbox, install with: pip install pre-commit"
+      - nu <(curl -fsSL file:///Users/gianni/dev/sandbox/setup-env/dist/setup-go.nu)
 
   info:
     desc: Show project environment information

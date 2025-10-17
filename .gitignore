@@ -1,36 +1,36 @@
 CLAUDE*
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Go binaries and plugins
+*.exe
+*.exe~
+*.dll
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-/lib/
-/lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.dylib
+.go
+
+# Go test binaries
+*.test
+
+# Go coverage
+*.out
+coverage.html
+coverage.txt
+
+# Go dependencies
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Wire generated files
+wire_gen.go
+
+# Air tmp directory (hot reload)
+tmp/
+
+# Task runner
 .task/
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-
-# UV
-.uv/
 
 # IDE
 .vscode/
