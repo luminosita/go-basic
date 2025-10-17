@@ -31,11 +31,10 @@
   "ignoreTests": false,
   "ignorePaths": [
     "**/node_modules/**",
-    "**/bower_components/**",
-    "**/__pycache__/**",
-    "**/.venv/**",
+    "**/vendor/**",
     "**/dist/**",
-    "**/build/**"
+    "**/build/**",
+    "**/bin/**"
   ],
   "packageRules": [
     {
@@ -45,7 +44,7 @@
       ],
       "matchCurrentVersion": "!/^0/",
       "matchDatasources": [
-        "pypi"
+        "go"
       ],
       "isVulnerabilityAlert": true,
       "groupName": null,
@@ -70,11 +69,11 @@
       ],
       "matchCurrentVersion": "!/^0/",
       "matchDatasources": [
-        "pypi"
+        "go"
       ],
       "isVulnerabilityAlert": false,
-      "groupName": "Python dependencies (weekly batch)",
-      "groupSlug": "python-deps-batch",
+      "groupName": "Go dependencies (weekly batch)",
+      "groupSlug": "go-deps-batch",
       "labels": [
         "dependencies",
         "maintenance"
@@ -83,7 +82,10 @@
       "schedule": [
         "before 6am on Monday"
       ],
-      "prTitle": "Update Python dependencies (weekly batch)"
+      "prTitle": "Update Go dependencies (weekly batch)",
+      "postUpdateOptions": [
+        "gomodTidy"
+      ]
     },
     {
       "description": "Major updates - Create individual PRs for careful review of breaking changes",
@@ -91,7 +93,7 @@
         "major"
       ],
       "matchDatasources": [
-        "pypi"
+        "go"
       ],
       "groupName": null,
       "labels": [
@@ -108,9 +110,13 @@
         "",
         "Before merging:",
         "1. Review the changelog and migration guide",
-        "2. Verify all tests pass",
-        "3. Check for deprecation warnings",
-        "4. Test manually if necessary"
+        "2. Run `go test -race ./...` to verify all tests pass",
+        "3. Check for deprecation warnings with `staticcheck ./...`",
+        "4. Test manually if necessary",
+        "5. Verify compatibility with minimum Go version in go.mod"
+      ],
+      "postUpdateOptions": [
+        "gomodTidy"
       ]
     },
     {
@@ -120,7 +126,7 @@
       ],
       "matchCurrentVersion": "/^0/",
       "matchDatasources": [
-        "pypi"
+        "go"
       ],
       "groupName": null,
       "labels": [
@@ -131,47 +137,78 @@
       "prPriority": 6,
       "prTitle": "[Pre-1.0] Update {{depName}} from {{currentVersion}} to {{newVersion}}",
       "prBodyNotes": [
-        "⚠️ **This package is pre-1.0 - minor version updates may contain breaking changes.**"
+        "⚠️ **This package is pre-1.0 - minor version updates may contain breaking changes per semantic versioning.**"
+      ],
+      "postUpdateOptions": [
+        "gomodTidy"
       ]
     },
     {
-      "description": "Development dependencies - Lower priority, batch with main dependencies",
+      "description": "Indirect dependencies - Lower priority, batch together",
       "matchDepTypes": [
-        "dev-dependencies"
+        "indirect"
       ],
       "matchDatasources": [
-        "pypi"
+        "go"
       ],
+      "groupName": "Go indirect dependencies (weekly batch)",
       "labels": [
         "dependencies",
-        "dev-dependencies"
+        "indirect"
       ],
-      "prPriority": 3
+      "prPriority": 3,
+      "schedule": [
+        "before 6am on Monday"
+      ],
+      "postUpdateOptions": [
+        "gomodTidy"
+      ]
     },
     {
       "description": "Ignore unstable releases - Only stable versions",
       "matchDatasources": [
-        "pypi"
+        "go"
       ],
       "ignoreUnstable": true,
-      "allowedVersions": "!/alpha|beta|rc|dev|pre/i"
+      "allowedVersions": "!/alpha|beta|rc/i"
+    },
+    {
+      "description": "Go version updates - Treat as major (requires review)",
+      "matchDepNames": [
+        "go"
+      ],
+      "matchDatasources": [
+        "golang-version"
+      ],
+      "labels": [
+        "dependencies",
+        "go-version",
+        "major-update"
+      ],
+      "prPriority": 8,
+      "prCreation": "immediate",
+      "automerge": false,
+      "prTitle": "[Go] Update Go version to {{newVersion}}",
+      "prBodyNotes": [
+        "⚠️ **This updates the Go toolchain version.**",
+        "",
+        "Before merging:",
+        "1. Review Go release notes for breaking changes",
+        "2. Ensure CI/CD pipelines support this Go version",
+        "3. Test with `go test -race ./...`",
+        "4. Update Docker/container images to match Go version"
+      ]
     }
   ],
-  "python": {
+  "golang": {
     "enabled": true
   },
-  "pip_requirements": {
-    "enabled": false
+  "gomod": {
+    "enabled": true
   },
-  "pip_setup": {
-    "enabled": false
-  },
-  "pep621": {
-    "enabled": true,
-    "fileMatch": [
-      "(^|/)pyproject\\.toml$"
-    ]
-  },
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
@@ -180,12 +217,17 @@
     "automerge": false,
     "prTitle": "Lock file maintenance (weekly)",
     "prBodyNotes": [
-      "This PR updates the lock file (uv.lock) to ensure dependencies are pinned to latest compatible versions.",
+      "This PR updates go.sum to ensure dependencies are pinned to latest compatible versions.",
       "",
-      "No version changes in pyproject.toml, but transitive dependencies may be updated."
+      "Runs `go mod tidy` to clean up unused dependencies and update checksums.",
+      "",
+      "No version changes in go.mod, but transitive dependencies may be updated."
     ],
     "commitMessageAction": "refresh",
-    "commitMessageTopic": "lock file"
+    "commitMessageTopic": "go.sum",
+    "postUpdateOptions": [
+      "gomodTidy"
+    ]
   },
   "vulnerabilityAlerts": {
     "enabled": true,
@@ -200,5 +242,5 @@
   "suppressNotifications": [
     "prIgnoreNotification"
   ],
-  "prFooter": "---\n\n🤖 This PR was created by Renovate Bot. Review the changes carefully and ensure all CI/CD checks pass before merging.\n\n📚 **Resources:**\n- [Renovate Documentation](https://docs.renovatebot.com/)\n- [Project Contributing Guide](./CONTRIBUTING.md#dependency-management)"
+  "prFooter": "---\n\n🤖 This PR was created by Renovate Bot. Review the changes carefully and ensure all CI/CD checks pass before merging.\n\n📚 **Resources:**\n- [Renovate Documentation](https://docs.renovatebot.com/)\n- [Go Modules Reference](https://go.dev/ref/mod)\n- Run `govulncheck ./...` to check for known vulnerabilities"
 }
