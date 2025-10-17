@@ -1,0 +1,204 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "description": "Renovate configuration for CHANGE_ME - Automated dependency management with security-focused batching strategy",
+  "timezone": "America/Los_Angeles",
+  "schedule": [
+    "after 10pm every weekday",
+    "before 5am every weekday",
+    "every weekend"
+  ],
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🔄 Dependency Updates Dashboard",
+  "dependencyDashboardHeader": "This dashboard tracks all pending dependency updates. Security updates are prioritized and created immediately. Minor updates are batched weekly. Major updates require individual review.",
+  "labels": [
+    "dependencies",
+    "automated"
+  ],
+  "assignees": [],
+  "reviewers": [],
+  "commitMessagePrefix": "chore(deps):",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{newValue}}",
+  "prConcurrentLimit": 10,
+  "prCreation": "immediate",
+  "prHourlyLimit": 5,
+  "automerge": false,
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/dist/**",
+    "**/build/**"
+  ],
+  "packageRules": [
+    {
+      "description": "Security updates - Create individual PRs immediately with high priority",
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "matchCurrentVersion": "!/^0/",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "isVulnerabilityAlert": true,
+      "groupName": null,
+      "labels": [
+        "dependencies",
+        "security",
+        "priority-high"
+      ],
+      "prPriority": 10,
+      "prCreation": "immediate",
+      "automerge": false,
+      "schedule": [
+        "at any time"
+      ],
+      "prTitle": "[Security] Update {{depName}} to {{newVersion}}"
+    },
+    {
+      "description": "Minor and patch updates - Batch weekly to reduce PR noise",
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "matchCurrentVersion": "!/^0/",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "isVulnerabilityAlert": false,
+      "groupName": "Python dependencies (weekly batch)",
+      "groupSlug": "python-deps-batch",
+      "labels": [
+        "dependencies",
+        "maintenance"
+      ],
+      "prPriority": 5,
+      "schedule": [
+        "before 6am on Monday"
+      ],
+      "prTitle": "Update Python dependencies (weekly batch)"
+    },
+    {
+      "description": "Major updates - Create individual PRs for careful review of breaking changes",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "groupName": null,
+      "labels": [
+        "dependencies",
+        "major-update",
+        "breaking-changes"
+      ],
+      "prPriority": 7,
+      "prCreation": "immediate",
+      "automerge": false,
+      "prTitle": "[Major] Update {{depName}} from {{currentVersion}} to {{newVersion}}",
+      "prBodyNotes": [
+        "⚠️ **This is a major version update that may contain breaking changes.**",
+        "",
+        "Before merging:",
+        "1. Review the changelog and migration guide",
+        "2. Verify all tests pass",
+        "3. Check for deprecation warnings",
+        "4. Test manually if necessary"
+      ]
+    },
+    {
+      "description": "Pre-1.0 packages - Treat minor updates as potentially breaking",
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchCurrentVersion": "/^0/",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "groupName": null,
+      "labels": [
+        "dependencies",
+        "pre-release",
+        "review-required"
+      ],
+      "prPriority": 6,
+      "prTitle": "[Pre-1.0] Update {{depName}} from {{currentVersion}} to {{newVersion}}",
+      "prBodyNotes": [
+        "⚠️ **This package is pre-1.0 - minor version updates may contain breaking changes.**"
+      ]
+    },
+    {
+      "description": "Development dependencies - Lower priority, batch with main dependencies",
+      "matchDepTypes": [
+        "dev-dependencies"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "labels": [
+        "dependencies",
+        "dev-dependencies"
+      ],
+      "prPriority": 3
+    },
+    {
+      "description": "Ignore unstable releases - Only stable versions",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "ignoreUnstable": true,
+      "allowedVersions": "!/alpha|beta|rc|dev|pre/i"
+    }
+  ],
+  "python": {
+    "enabled": true
+  },
+  "pip_requirements": {
+    "enabled": false
+  },
+  "pip_setup": {
+    "enabled": false
+  },
+  "pep621": {
+    "enabled": true,
+    "fileMatch": [
+      "(^|/)pyproject\\.toml$"
+    ]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on Monday"
+    ],
+    "automerge": false,
+    "prTitle": "Lock file maintenance (weekly)",
+    "prBodyNotes": [
+      "This PR updates the lock file (uv.lock) to ensure dependencies are pinned to latest compatible versions.",
+      "",
+      "No version changes in pyproject.toml, but transitive dependencies may be updated."
+    ],
+    "commitMessageAction": "refresh",
+    "commitMessageTopic": "lock file"
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security",
+      "vulnerability"
+    ],
+    "assignees": [],
+    "reviewers": []
+  },
+  "osvVulnerabilityAlerts": true,
+  "suppressNotifications": [
+    "prIgnoreNotification"
+  ],
+  "prFooter": "---\n\n🤖 This PR was created by Renovate Bot. Review the changes carefully and ensure all CI/CD checks pass before merging.\n\n📚 **Resources:**\n- [Renovate Documentation](https://docs.renovatebot.com/)\n- [Project Contributing Guide](./CONTRIBUTING.md#dependency-management)"
+}

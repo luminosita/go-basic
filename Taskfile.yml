@@ -1,0 +1,719 @@
+version: '3'
+
+# AI Agent MCP Server - Go Development Tasks
+# Consolidated CLI interface for all Go development operations
+# See: /prompts/CLAUDE/go/CLAUDE-tooling.md for detailed documentation
+
+vars:
+  SRC_DIR: cmd
+  INTERNAL_DIR: internal
+  PKG_DIR: pkg
+  TESTS_DIR: tests
+  COVERAGE_MIN: 80
+  GO_VERSION: "1.21"
+  PROJECT_NAME: mcp_server
+  MODULE_PATH: github.com/yourusername/mcp_server
+  IMAGE_NAME: ai-agent-mcp-server-go
+  TAG: latest
+  CONTAINER_NAME: mcp-server-go
+  DB_CONTAINER_NAME: mcp-postgres-go
+  DB_USER: mcp_user
+  DB_PASSWORD: dev_password_change_in_production
+  DB_NAME: mcp_dev
+  MIGRATION_DIR: migrations
+
+tasks:
+  # ====================
+  # Code Quality Tasks
+  # ====================
+
+  lint:
+    desc: Run golangci-lint (check only, no fixes)
+    cmds:
+      - golangci-lint run ./...
+
+  lint:fix:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run --fix ./...
+
+  lint:config:
+    desc: Show effective golangci-lint configuration
+    cmds:
+      - golangci-lint config path
+
+  format:
+    desc: Format code with gofmt and goimports
+    cmds:
+      - gofmt -w .
+      - goimports -w .
+
+  format:check:
+    desc: Check formatting without changes
+    cmds:
+      - |
+        UNFORMATTED=$(gofmt -l .)
+        if [ -n "$UNFORMATTED" ]; then
+          echo "❌ The following files are not formatted:"
+          echo "$UNFORMATTED"
+          exit 1
+        fi
+        echo "✅ All files are properly formatted"
+
+  lint:all:
+    desc: Run all linting and formatting together
+    cmds:
+      - task: format
+      - task: lint:fix
+
+  # ====================
+  # Security & Vulnerability Scanning
+  # ====================
+
+  security:gosec:
+    desc: Run gosec security scanner
+    cmds:
+      - gosec -fmt=sarif -out=gosec-results.sarif -stdout -verbose=text ./...
+
+  security:govulncheck:
+    desc: Run govulncheck for known vulnerabilities
+    cmds:
+      - govulncheck ./...
+
+  security:staticcheck:
+    desc: Run staticcheck advanced static analysis
+    cmds:
+      - staticcheck ./...
+
+  security:all:
+    desc: Run all security scans
+    cmds:
+      - task: security:gosec
+      - task: security:govulncheck
+      - task: security:staticcheck
+  # ====================
+  # Type Checking Tasks
+  # ====================
+
+  # Type checking (Go has built-in type system)
+  type-check:
+    desc: Type check with Go's built-in type system (runs go vet)
+    cmds:
+      - go vet ./...
+      - echo "✅ Type checking complete (Go has compile-time type safety)"
+
+
+  # ====================
+  # Testing Tasks
+  # ====================
+
+  test:
+    desc: Run all tests with coverage
+    cmds:
+      - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "✅ Coverage report generated at coverage.html"
+
+  test:unit:
+    desc: Run unit tests only (exclude integration)
+    cmds:
+      - go test -v -short ./...
+
+  test:integration:
+    desc: Run integration tests only
+    cmds:
+      - go test -v -run Integration ./...
+
+  test:race:
+    desc: Run tests with race detector
+    cmds:
+      - go test -v -race ./...
+
+  test:bench:
+    desc: Run benchmarks
+    cmds:
+      - go test -v -bench=. -benchmem ./...
+
+  test:verbose:
+    desc: Run tests with verbose output
+    cmds:
+      - go test -v ./...
+
+  test:failed:
+    desc: Run only failed tests (requires gotestsum)
+    cmds:
+      - gotestsum --rerun-fails ./...
+
+
+  test:coverage:
+    desc: Run tests and enforce {{.COVERAGE_MIN}}% coverage
+    cmds:
+      - |
+        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+        COVERAGE_INT=${COVERAGE%.*}
+        if [ $COVERAGE_INT -lt {{.COVERAGE_MIN}} ]; then
+          echo "❌ Coverage $COVERAGE% is below minimum {{.COVERAGE_MIN}}%"
+          exit 1
+        fi
+        echo "✅ Coverage $COVERAGE% meets minimum {{.COVERAGE_MIN}}%"
+
+  test:coverage:report:
+    desc: Generate coverage report and view in browser
+    cmds:
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out
+
+  test:e2e:
+    desc: Run end-to-end tests only
+    cmds:
+      - go test -v -tags=e2e ./tests/e2e/...
+
+  # ====================
+  # Quality Check (All)
+  # ====================
+
+  check:
+    desc: Run all quality checks (lint, format, type-check, security, test)
+    cmds:
+      - task: format:check
+      - task: lint
+      - task: type-check
+      - task: security:all
+      - task: test:coverage
+
+  check:ci:
+    desc: Run CI/CD pipeline checks
+    cmds:
+      - task: deps:install:ci
+      - task: format:check
+      - task: lint
+      - task: type-check
+      - task: security:all
+      - task: test:coverage
+
+  # ====================
+  # Dependency Management
+  # ====================
+
+  deps:install:
+    desc: Install/download project dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  deps:install:ci:
+    desc: Install dependencies for CI (verify checksums)
+    cmds:
+      - go mod download
+      - go mod verify
+
+  deps:download:
+    desc: Download dependencies to module cache (alias for deps:install)
+    cmds:
+      - task: deps:install
+
+  deps:tidy:
+    desc: Tidy go.mod and go.sum
+    cmds:
+      - go mod tidy
+
+  deps:verify:
+    desc: Verify dependencies have expected content
+    cmds:
+      - go mod verify
+
+  deps:update:
+    desc: Update all dependencies to latest minor/patch versions
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  deps:update:major:
+    desc: Update all dependencies to latest major versions (use with caution)
+    cmds:
+      - go get -u=patch ./...
+      - go mod tidy
+
+  deps:vendor:
+    desc: Vendor dependencies into vendor/ directory
+    cmds:
+      - go mod vendor
+
+  deps:graph:
+    desc: Display module dependency graph
+    cmds:
+      - go mod graph
+
+  deps:why:
+    desc: Explain why package is needed (usage - task deps:why -- PKG=github.com/foo/bar)
+    cmds:
+      - go mod why {{.PKG}}
+
+  # ====================
+  # Pre-commit Hooks
+  # ====================
+
+  hooks:install:
+    desc: Install pre-commit hooks for Go (using pre-commit framework)
+    cmds:
+      - pre-commit install
+
+  hooks:run:
+    desc: Run pre-commit hooks manually on all files
+    cmds:
+      - pre-commit run --all-files
+
+  hooks:update:
+    desc: Update pre-commit hooks to latest versions
+    cmds:
+      - pre-commit autoupdate
+      - echo "✅ Pre-commit hooks updated"
+
+  hooks:uninstall:
+    desc: Uninstall pre-commit hooks
+    cmds:
+      - pre-commit uninstall
+      - echo "✅ Pre-commit hooks uninstalled"
+
+  # ====================
+  # Build Tasks
+  # ====================
+
+  build:
+    desc: Build the application binary
+    cmds:
+      - go build -o bin/{{.PROJECT_NAME}} ./{{.SRC_DIR}}/...
+
+  build:all:
+    desc: Build all binaries in cmd/
+    cmds:
+      - |
+        for dir in {{.SRC_DIR}}/*; do
+          if [ -d "$dir" ]; then
+            BINARY_NAME=$(basename $dir)
+            echo "Building $BINARY_NAME..."
+            go build -o bin/$BINARY_NAME ./$dir
+          fi
+        done
+
+  build:release:
+    desc: Build optimized release binary
+    cmds:
+      - go build -ldflags="-s -w" -o bin/{{.PROJECT_NAME}} ./{{.SRC_DIR}}/...
+
+  build:cross:
+    desc: Cross-compile for multiple platforms
+    cmds:
+      - GOOS=linux GOARCH=amd64 go build -o bin/{{.PROJECT_NAME}}-linux-amd64 ./{{.SRC_DIR}}/...
+      - GOOS=darwin GOARCH=amd64 go build -o bin/{{.PROJECT_NAME}}-darwin-amd64 ./{{.SRC_DIR}}/...
+      - GOOS=darwin GOARCH=arm64 go build -o bin/{{.PROJECT_NAME}}-darwin-arm64 ./{{.SRC_DIR}}/...
+      - GOOS=windows GOARCH=amd64 go build -o bin/{{.PROJECT_NAME}}-windows-amd64.exe ./{{.SRC_DIR}}/...
+      - echo "✅ Cross-compilation complete"
+
+  # ====================
+  # Code Generation Tasks
+  # ====================
+
+  generate:
+    desc: Run go generate for the entire project
+    cmds:
+      - go generate ./...
+
+  generate:wire:
+    desc: Generate Wire dependency injection code
+    cmds:
+      - wire ./...
+      - echo "✅ Wire code generated"
+
+  generate:mocks:
+    desc: Generate mocks for interfaces using mockgen
+    cmds:
+      - go generate ./...
+      - echo "✅ Mocks generated"
+
+  generate:swagger:
+    desc: Generate Swagger/OpenAPI documentation
+    cmds:
+      - swag init -g {{.SRC_DIR}}/main.go --output ./docs/swagger
+      - echo "✅ Swagger docs generated at docs/swagger/swagger.json"
+
+  generate:all:
+    desc: Run all code generation tasks
+    cmds:
+      - task: generate:wire
+      - task: generate:mocks
+      - task: generate:swagger
+
+  # ====================
+  # Run Tasks
+  # ====================
+
+  run:
+    desc: Run the application
+    cmds:
+      - go run ./{{.SRC_DIR}}/...
+
+  dev:
+    desc: Run application with hot-reload using air
+    cmds:
+      - air
+
+  dev:debug:
+    desc: Run application with delve debugger
+    cmds:
+      - dlv debug ./{{.SRC_DIR}}/... --headless --listen=:2345 --api-version=2
+
+  # ====================
+  # Container Tasks (Podman/Docker)
+  # ====================
+
+  container:build:
+    desc: Build production container image using multi-stage Containerfile
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+      TAG: '{{.TAG | default "latest"}}'
+    cmds:
+      - '{{.RUNTIME}} build -t {{.IMAGE_NAME}}:{{.TAG}} -f Containerfile .'
+      - echo "✅ Built {{.IMAGE_NAME}}:{{.TAG}} using {{.RUNTIME}}"
+
+  container:run:
+    desc: Run production container locally with port mapping
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+      TAG: '{{.TAG | default "latest"}}'
+      ENV_FILE: '{{.ENV_FILE | default ".env"}}'
+    cmds:
+      - |
+        if [ -f "{{.ENV_FILE}}" ]; then
+          {{.RUNTIME}} run -d --name {{.CONTAINER_NAME}} -p 8000:8000 --env-file {{.ENV_FILE}} {{.IMAGE_NAME}}:{{.TAG}}
+        else
+          {{.RUNTIME}} run -d --name {{.CONTAINER_NAME}} -p 8000:8000 {{.IMAGE_NAME}}:{{.TAG}}
+        fi
+      - echo "✅ Container {{.CONTAINER_NAME}} started using {{.RUNTIME}}"
+      - echo "Application available at http://localhost:8000"
+
+  container:stop:
+    desc: Stop running container
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} stop {{.CONTAINER_NAME}} || true'
+      - '{{.RUNTIME}} rm {{.CONTAINER_NAME}} || true'
+      - echo "✅ Container {{.CONTAINER_NAME}} stopped"
+
+  container:logs:
+    desc: View container logs
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} logs -f {{.CONTAINER_NAME}}'
+
+  container:shell:
+    desc: Open shell in running container for debugging
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} exec -it {{.CONTAINER_NAME}} /bin/sh'
+
+  container:clean:
+    desc: Remove all containers and images
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} stop {{.CONTAINER_NAME}} || true'
+      - '{{.RUNTIME}} rm {{.CONTAINER_NAME}} || true'
+      - '{{.RUNTIME}} rmi {{.IMAGE_NAME}}:latest || true'
+      - echo "✅ Cleaned up containers and images"
+
+  container:scan:
+    desc: Scan container image for security vulnerabilities using Trivy
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+      TAG: '{{.TAG | default "latest"}}'
+      SEVERITY: '{{.SEVERITY | default "CRITICAL,HIGH,MEDIUM,LOW"}}'
+      IMAGE_REF: 'localhost/{{.IMAGE_NAME}}:{{.TAG}}'
+    cmds:
+      - |
+        # Check if Trivy is installed
+        if ! command -v trivy >/dev/null 2>&1; then
+          echo "❌ Trivy not installed. Install with:"
+          echo "   macOS: brew install aquasecurity/trivy/trivy"
+          echo "   Linux: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
+          exit 1
+        fi
+
+        # Set DOCKER_HOST for Podman if available
+        if command -v podman >/dev/null 2>&1; then
+          PODMAN_SOCKET=$(podman machine inspect --format '{{`{{.ConnectionInfo.PodmanSocket.Path}}`}}' 2>/dev/null)
+          if [ -n "$PODMAN_SOCKET" ]; then
+            export DOCKER_HOST="unix://$PODMAN_SOCKET"
+          fi
+        fi
+
+        echo "🔍 Scanning {{.IMAGE_REF}} for vulnerabilities..."
+        trivy image --severity {{.SEVERITY}} {{.IMAGE_REF}}
+
+  container:scan:critical:
+    desc: Scan for critical and high severity vulnerabilities only
+    vars:
+      TAG: '{{.TAG | default "latest"}}'
+    cmds:
+      - task: container:scan
+        vars:
+          TAG: '{{.TAG}}'
+          SEVERITY: CRITICAL,HIGH
+
+  container:scan:sarif:
+    desc: Generate SARIF security report for GitHub Security integration
+    vars:
+      TAG: '{{.TAG | default "latest"}}'
+      OUTPUT_FILE: '{{.OUTPUT_FILE | default "trivy-results.sarif"}}'
+      IMAGE_REF: 'localhost/{{.IMAGE_NAME}}:{{.TAG}}'
+    cmds:
+      - |
+        # Check if Trivy is installed
+        if ! command -v trivy >/dev/null 2>&1; then
+          echo "❌ Trivy not installed. Install with:"
+          echo "   macOS: brew install aquasecurity/trivy/trivy"
+          echo "   Linux: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
+          exit 1
+        fi
+
+        # Set DOCKER_HOST for Podman if available
+        if command -v podman >/dev/null 2>&1; then
+          PODMAN_SOCKET=$(podman machine inspect --format '{{`{{.ConnectionInfo.PodmanSocket.Path}}`}}' 2>/dev/null)
+          if [ -n "$PODMAN_SOCKET" ]; then
+            export DOCKER_HOST="unix://$PODMAN_SOCKET"
+          fi
+        fi
+
+        echo "🔍 Generating SARIF report for {{.IMAGE_REF}}..."
+        trivy image --format sarif --output {{.OUTPUT_FILE}} {{.IMAGE_REF}}
+        echo "✅ SARIF report saved to {{.OUTPUT_FILE}}"
+        echo "Upload to GitHub: gh api repos/:owner/:repo/code-scanning/sarifs -F sarif=@{{.OUTPUT_FILE}}"
+
+  container:scan:json:
+    desc: Generate JSON security report for programmatic analysis
+    vars:
+      TAG: '{{.TAG | default "latest"}}'
+      OUTPUT_FILE: '{{.OUTPUT_FILE | default "trivy-results.json"}}'
+      IMAGE_REF: 'localhost/{{.IMAGE_NAME}}:{{.TAG}}'
+    cmds:
+      - |
+        # Check if Trivy is installed
+        if ! command -v trivy >/dev/null 2>&1; then
+          echo "❌ Trivy not installed. Install with:"
+          echo "   macOS: brew install aquasecurity/trivy/trivy"
+          echo "   Linux: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"
+          exit 1
+        fi
+
+        # Set DOCKER_HOST for Podman if available
+        if command -v podman >/dev/null 2>&1; then
+          PODMAN_SOCKET=$(podman machine inspect --format '{{`{{.ConnectionInfo.PodmanSocket.Path}}`}}' 2>/dev/null)
+          if [ -n "$PODMAN_SOCKET" ]; then
+            export DOCKER_HOST="unix://$PODMAN_SOCKET"
+          fi
+        fi
+
+        echo "🔍 Generating JSON report for {{.IMAGE_REF}}..."
+        trivy image --format json --output {{.OUTPUT_FILE}} {{.IMAGE_REF}}
+        echo "✅ JSON report saved to {{.OUTPUT_FILE}}"
+
+  # ====================
+  # Database Tasks (Podman/Docker)
+  # ====================
+
+  db:start:
+    desc: Start PostgreSQL + pgvector container for local development
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - |
+        {{.RUNTIME}} run -d \
+          --name {{.DB_CONTAINER_NAME}} \
+          -e POSTGRES_USER={{.DB_USER}} \
+          -e POSTGRES_PASSWORD={{.DB_PASSWORD}} \
+          -e POSTGRES_DB={{.DB_NAME}} \
+          -p 5432:5432 \
+          -v pgdata:/var/lib/postgresql/data \
+          -v $(pwd)/scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro \
+          ankane/pgvector:latest
+      - echo "✅ PostgreSQL + pgvector container started"
+      - echo "Database accessible at localhost:5432"
+      - echo "Waiting for database to be ready..."
+      - sleep 5
+
+  db:stop:
+    desc: Stop database container gracefully
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} stop {{.DB_CONTAINER_NAME}} || true'
+      - '{{.RUNTIME}} rm {{.DB_CONTAINER_NAME}} || true'
+      - echo "✅ Database container stopped"
+
+  db:reset:
+    desc: Reset database to clean state (WARNING - destroys data)
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - echo "⚠️  WARNING - This will destroy all database data!"
+      - echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
+      - sleep 5
+      - task: db:stop
+      - '{{.RUNTIME}} volume rm pgdata || true'
+      - echo "✅ Database volume removed"
+      - task: db:start
+
+  db:logs:
+    desc: View database container logs
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} logs -f {{.DB_CONTAINER_NAME}}'
+
+  db:shell:
+    desc: Connect to PostgreSQL shell
+    vars:
+      RUNTIME:
+        sh: command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker"
+    cmds:
+      - '{{.RUNTIME}} exec -it {{.DB_CONTAINER_NAME}} psql -U {{.DB_USER}} -d {{.DB_NAME}}'
+
+  db:restart:
+    desc: Restart database container
+    cmds:
+      - task: db:stop
+      - task: db:start
+
+  # ====================
+  # Database Migration Tasks (golang-migrate)
+  # ====================
+
+  db:migrate:create:
+    desc: Create new migration (usage - task db:migrate:create -- NAME=add_users_table)
+    cmds:
+      - migrate create -ext sql -dir {{.MIGRATION_DIR}} -seq {{.NAME}}
+      - echo "✅ Migration created in {{.MIGRATION_DIR}}/"
+
+  db:migrate:up:
+    desc: Apply all pending migrations
+    cmds:
+      - migrate -path {{.MIGRATION_DIR}} -database "postgresql://{{.DB_USER}}:{{.DB_PASSWORD}}@localhost:5432/{{.DB_NAME}}?sslmode=disable" up
+      - echo "✅ Migrations applied successfully"
+
+  db:migrate:force:
+    desc: Force migration version (usage - task db:migrate:force -- VERSION=5)
+    cmds:
+      - migrate -path {{.MIGRATION_DIR}} -database "postgresql://{{.DB_USER}}:{{.DB_PASSWORD}}@localhost:5432/{{.DB_NAME}}?sslmode=disable" force {{.VERSION}}
+      - echo "✅ Migration version forced to {{.VERSION}}"
+
+  db:migrate:version:
+    desc: Show current migration version
+    cmds:
+      - migrate -path {{.MIGRATION_DIR}} -database "postgresql://{{.DB_USER}}:{{.DB_PASSWORD}}@localhost:5432/{{.DB_NAME}}?sslmode=disable" version
+
+  # Aliases for consistency with Python naming
+  db:migrate:
+    desc: Apply all pending migrations (alias for db:migrate:up)
+    cmds:
+      - task: db:migrate:up
+
+  db:migrate:down:
+    desc: Rollback last migration
+    cmds:
+      - migrate -path {{.MIGRATION_DIR}} -database "postgresql://{{.DB_USER}}:{{.DB_PASSWORD}}@localhost:5432/{{.DB_NAME}}?sslmode=disable" down 1
+      - echo "✅ Last migration rolled back"
+
+  db:migrate:rollback:
+    desc: Rollback last migration (alias for db:migrate:down)
+    cmds:
+      - task: db:migrate:down
+
+  db:migrate:status:
+    desc: Show current migration version (alias for db:migrate:version)
+    cmds:
+      - task: db:migrate:version
+
+  # ====================
+  # Documentation Tasks
+  # ====================
+
+  docs:serve:
+    desc: Serve Swagger documentation locally
+    cmds:
+      - echo "Swagger UI available at http://localhost:8080/swagger/index.html"
+      - echo "Run application with 'task run' or 'task dev'"
+
+  docs:godoc:
+    desc: Start local godoc server
+    cmds:
+      - godoc -http=:6060
+      - echo "Documentation available at http://localhost:6060/pkg/{{.MODULE_PATH}}/"
+
+  # ====================
+  # Utility Tasks
+  # ====================
+
+  clean:
+    desc: Clean build artifacts and caches
+    cmds:
+      - rm -rf bin/
+      - rm -rf coverage.out coverage.html
+      - rm -rf gosec-results.sarif
+      - rm -rf docs/swagger/
+      - go clean -cache -testcache -modcache
+
+  clean:all:
+    desc: Clean everything including vendor
+    cmds:
+      - task: clean
+      - rm -rf vendor/
+
+  setup:
+    desc: Initial project setup (install deps and tools)
+    cmds:
+      - go mod download
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - go install golang.org/x/vuln/cmd/govulncheck@latest
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
+      - go install github.com/google/wire/cmd/wire@latest
+      - go install github.com/swaggo/swag/cmd/swag@latest
+      - go install github.com/golang/mock/mockgen@latest
+      - go install github.com/cosmtrek/air@latest
+      - go install github.com/go-delve/delve/cmd/dlv@latest
+      - echo "✅ Go tools installed successfully"
+      - echo ""
+      - echo "Note: pre-commit is managed by devbox (devbox.json)"
+      - echo "If not using devbox, install with: pip install pre-commit"
+
+  info:
+    desc: Show project environment information
+    cmds:
+      - echo "Project - {{.PROJECT_NAME}}"
+      - echo "Go Version - {{.GO_VERSION}}"
+      - echo "Coverage Minimum - {{.COVERAGE_MIN}}%"
+      - echo ""
+      - go version
+      - golangci-lint version
+      - echo ""
+      - go env
+
+  help:
+    desc: Show available tasks
+    cmds:
+      - task --list

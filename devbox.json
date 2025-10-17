@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetpack-io/devbox/main/.schema/devbox.schema.json",
+  "packages": [
+    "go@latest",
+    "nushell@latest",
+    "go-task@latest",
+    "podman@latest",
+    "hadolint@latest",
+    "trivy@latest",
+    "pre-commit@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo '================================'",
+      "echo 'CHANGE_ME Dev Environment'",
+      "echo '================================'",
+      "echo ''",
+      "echo 'Go version:' $(go version)",
+      "echo 'NuShell version:' $(nu --version)",
+      "echo 'Taskfile version:' $(task --version)",
+      "echo 'Podman version:' $(podman --version)",
+      "echo 'Hadolint version:' $(hadolint --version)",
+      "echo 'Trivy version:' $(trivy --version | head -1)",
+      "echo ''",
+      "echo 'Quick start:'",
+      "echo '  1. Run setup: nu scripts/setup.nu'",
+      "echo '  2. View tasks: task --list'",
+      "echo '  3. Start dev server: task dev'",
+      "echo ''",
+      "# Add ~/.local/bin to PATH for user-installed binaries",
+      "export PATH=\"$HOME/.local/bin:$PATH\"",
+      "# Create .local/bin if it doesn't exist",
+      "mkdir -p $HOME/.local/bin"
+    ],
+    "scripts": {
+      "setup": "nu scripts/setup.nu",
+      "test": "task test",
+      "dev": "task dev"
+    }
+  },
+  "env": {
+    "DEVBOX_ENV": "development",
+    "PYTHONUNBUFFERED": "1"
+  }
+}

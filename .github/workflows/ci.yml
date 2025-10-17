@@ -1,0 +1,426 @@
+name: Go CI/CD Pipeline
+
+# Trigger on Go-related changes in feature branches and PRs to main
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'chore/**'
+      - 'release/**'
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Taskfile.yml'
+      - 'Containerfile'
+      - '.golangci.yml'
+      - '.github/workflows/go-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Taskfile.yml'
+      - 'Containerfile'
+      - '.golangci.yml'
+
+# Cancel in-progress runs on new push to same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.21'
+  GOLANGCI_LINT_VERSION: 'v1.55'
+
+jobs:
+  # Setup job - installs dependencies and caches for downstream jobs
+  setup:
+    name: Setup Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+      - name: Install dependencies
+        run: task deps:install:ci
+
+      - name: Cache Go build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-
+
+  # Containerfile linting job
+  lint-containerfile:
+    name: Containerfile Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ./Containerfile
+          failure-threshold: error
+          ignore: DL3008,DL4006  # Ignore version pinning and pipefail warnings
+
+  # Lint and format validation job
+  lint-and-format:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+      - name: Restore Go build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m
+
+      - name: Check formatting (gofmt)
+        run: task format:check
+
+
+  # Type checking job (Go has compile-time type safety)
+  type-check:
+    name: Type Safety Validation
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+      - name: Run go vet (type checking)
+        run: task type-check
+
+  # Test execution and coverage validation job
+  test-and-coverage:
+    name: Test Execution and Coverage
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+      - name: Restore Go build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-
+
+      - name: Run tests with race detector and coverage
+        run: task test:coverage
+
+      - name: Generate coverage HTML report
+        run: go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            coverage.out
+            coverage.html
+
+  # Report job - aggregates results and posts to PR
+  report:
+    name: Build Status Report
+    runs-on: ubuntu-latest
+    needs: [lint-containerfile, lint-and-format, security, type-check, test-and-coverage, build-container, scan-container]
+    if: always()
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Check job results
+        run: |
+          if [ "${{ needs.lint-containerfile.result }}" != "success" ] || \
+             [ "${{ needs.lint-and-format.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ] || \
+             [ "${{ needs.type-check.result }}" != "success" ] || \
+             [ "${{ needs.test-and-coverage.result }}" != "success" ] || \
+             [ "${{ needs.build-container.result }}" != "success" ] || \
+             [ "${{ needs.scan-container.result }}" != "success" ]; then
+            echo "❌ Build failed - one or more validation jobs failed"
+            echo "- Containerfile Validation: ${{ needs.lint-containerfile.result }}"
+            echo "- Code Quality Checks: ${{ needs.lint-and-format.result }}"
+            echo "- Security Scans: ${{ needs.security.result }}"
+            echo "- Type Check: ${{ needs.type-check.result }}"
+            echo "- Test and Coverage: ${{ needs.test-and-coverage.result }}"
+            echo "- Container Build: ${{ needs.build-container.result }}"
+            echo "- Container Security Scan: ${{ needs.scan-container.result }}"
+            exit 1
+          else
+            echo "✅ Build passed - all validation jobs succeeded"
+          fi
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-reports
+          path: coverage-reports/
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const containerfileResult = '${{ needs.lint-containerfile.result }}';
+            const lintResult = '${{ needs.lint-and-format.result }}';
+            const securityResult = '${{ needs.security.result }}';
+            const typeResult = '${{ needs.type-check.result }}';
+            const testResult = '${{ needs.test-and-coverage.result }}';
+            const containerBuildResult = '${{ needs.build-container.result }}';
+            const scanResult = '${{ needs.scan-container.result }}';
+
+            const allPassed = containerfileResult === 'success' && lintResult === 'success' &&
+                             securityResult === 'success' && typeResult === 'success' &&
+                             testResult === 'success' && containerBuildResult === 'success' &&
+                             scanResult === 'success';
+
+            const status = allPassed ? '✅ Build Passed' : '❌ Build Failed';
+
+            // Show push status in container build result
+            const isReleaseBranch = '${{ github.ref }}'.startsWith('refs/heads/release/');
+            const containerNote = isReleaseBranch ? ' (pushed to registry)' : ' (build only)';
+
+            const body = `## ${status} - Go
+
+            | Job | Status |
+            |-----|--------|
+            | Containerfile Validation | ${containerfileResult === 'success' ? '✅' : '❌'} |
+            | Code Quality Checks | ${lintResult === 'success' ? '✅' : '❌'} |
+            | Security Scans | ${securityResult === 'success' ? '✅' : '❌'} |
+            | Type Safety Validation | ${typeResult === 'success' ? '✅' : '❌'} |
+            | Test Execution and Coverage | ${testResult === 'success' ? '✅' : '❌'} |
+            | Container Build | ${containerBuildResult === 'success' ? '✅' + containerNote : '❌'} |
+            | Container Security Scan | ${scanResult === 'success' ? '✅ No vulnerabilities' : '❌ Vulnerabilities detected'} |
+
+            **Note:** Container images are pushed to registry only on \`release/*\` branches.
+
+            ${scanResult !== 'success' ? '⚠️ **Security Alert:** Vulnerabilities detected in container image. [View details](https://github.com/${{ github.repository }}/security/code-scanning)\n\n' : ''}[View detailed logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  # Container build and push job - builds on all branches, pushes only on release branches
+  build-container:
+    name: Build and Push Container Image
+    runs-on: ubuntu-latest
+    needs: [lint-containerfile, lint-and-format, security, type-check, test-and-coverage]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: startsWith(github.ref, 'refs/heads/release/') && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from go.mod
+        id: version
+        run: |
+          VERSION=$(grep '^module ' go.mod | awk '{print $2}' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.1.0")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          push: ${{ startsWith(github.ref, 'refs/heads/release/') && github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository }}:go-latest
+            ghcr.io/${{ github.repository }}:go-${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository }}:go-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image build summary
+        run: |
+          if [[ "${{ github.ref }}" == refs/heads/release/* ]] && [ "${{ github.event_name }}" = "push" ]; then
+            echo "✅ Container image built and pushed successfully"
+            echo "Registry: ghcr.io/${{ github.repository }}"
+            echo "Tags:"
+            echo "  - go-latest"
+            echo "  - go-${{ steps.version.outputs.version }}"
+            echo "  - go-${{ github.sha }}"
+          else
+            echo "✅ Container image built successfully (not pushed - not a release branch)"
+            echo "Build verified - image will be pushed on release branch"
+          fi
+
+  # Container security scanning job - scans built images for vulnerabilities
+  scan-container:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    needs: build-container
+    permissions:
+      contents: read
+      security-events: write  # For SARIF upload to GitHub Security tab
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          load: true  # Load into local Docker daemon for Trivy scanning
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'ghcr.io/${{ github.repository }}:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '1'  # Fail on vulnerabilities
+          ignore-unfixed: true  # Ignore vulnerabilities without available fixes
+          trivyignores: '.trivyignore'  # Use ignore file for documented exceptions
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate vulnerability summary
+        if: failure()
+        run: |
+          echo "❌ Container security scan failed - vulnerabilities detected"
+          echo "View details in GitHub Security tab: https://github.com/${{ github.repository }}/security/code-scanning"
+          echo ""
+          echo "Vulnerabilities found. Please review and remediate before deployment."
+
+  # Security scanning job
+  security:
+    name: Security Scans
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+      - name: Install security tools
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run gosec (security scanner)
+        run: task security:gosec
+        continue-on-error: true
+
+      - name: Run govulncheck (vulnerability scanner)
+        run: task security:govulncheck
+
+      - name: Run staticcheck (static analysis)
+        run: task security:staticcheck
+
+      - name: Upload gosec SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec

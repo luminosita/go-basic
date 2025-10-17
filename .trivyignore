@@ -1,0 +1,32 @@
+# Trivy Vulnerability Ignore List
+# Format: CVE-ID or vulnerability ID per line
+# Reason for ignoring should be documented in comments
+
+# =============================================================================
+# Unfixed Vulnerabilities (No remediation available)
+# =============================================================================
+
+# CVE-2025-7709 - SQLite FTS5 integer overflow
+# Package: libsqlite3-0 (3.46.1-7)
+# Severity: MEDIUM
+# Status: No fix available in Debian 13.1
+# Reason: Unfixed upstream vulnerability - waiting for Debian security team to provide patch
+# Tracking: Will be automatically fixed when Debian releases update
+# Risk Assessment: Low - FTS5 module not used in application
+CVE-2025-7709
+
+# CVE-2025-8869 - pip symbolic link extraction vulnerability
+# Package: pip (24.0)
+# Severity: MEDIUM
+# Status: No fix available in python:3.11-slim base image
+# Reason: Unfixed upstream vulnerability - waiting for Python base image update
+# Tracking: Will be automatically fixed when Python releases updated base image
+# Risk Assessment: Low - pip only used during build, not in runtime
+# Mitigation: Using multi-stage build - pip not present in production image
+CVE-2025-8869
+
+# =============================================================================
+# Low Severity Vulnerabilities (Accepted Risk)
+# =============================================================================
+# Note: LOW severity CVEs are logged but do not block deployment
+# These are tracked for awareness but not actively remediated unless severity increases

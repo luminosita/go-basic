@@ -1,0 +1,36 @@
+# Development files
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# CI/CD
+.github/
+
+# Project artifacts
+artifacts/
+feedback/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Tests
+tests/
