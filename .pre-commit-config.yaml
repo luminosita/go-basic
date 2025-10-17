@@ -55,7 +55,7 @@ repos:
         name: gosec (security scanner)
         description: Security scanner for Go code
         entry: gosec
-        args: ['-fmt=text', '-exclude-dir=tests', './...']
+        args: ['-fmt=text', '-exclude-dir=tests', '-exclude-dir=.go', '-exclude-dir=vendor', './...']
         language: system
         types: [go]
         pass_filenames: false
