@@ -48,6 +48,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     ./cmd/api
 
 # Verify binary is statically linked
+# hadolint ignore=DL4006
 RUN ldd /build/bin/api 2>&1 | grep -q "not a dynamic executable"
 
 # -----------------------------------------------------------------------------
