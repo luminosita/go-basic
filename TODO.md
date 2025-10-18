@@ -1,7 +1,5 @@
   ## Code Reviews
 
-  **Viktor Video**
-
   Industry Standard Approach
 
   1. Pre-commit Hooks (Fast feedback)
