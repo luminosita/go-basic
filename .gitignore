@@ -1,4 +1,5 @@
-CLAUDE*
+prompts
+CLAUDE.md
 
 # Go binaries and plugins
 *.exe
